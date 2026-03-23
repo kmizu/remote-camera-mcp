@@ -1,0 +1,17 @@
+# sbt build artifacts
+target/
+.jvm/
+.native/
+project/target/
+project/project/
+
+# Environment (contains secrets)
+.env
+
+# IDE
+.idea/
+.vscode/
+.bsp/
+metals.sbt
+.metals/
+.bloop/
