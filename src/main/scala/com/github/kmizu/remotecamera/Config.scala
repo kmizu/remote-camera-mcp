@@ -12,7 +12,6 @@ case class CameraConfig(
     username: String,
     password: String,
     onvifPort: Int = 2020,
-    streamUrl: Option[String] = None,
     mountMode: String = "normal", // "normal" | "ceiling"
 )
 
@@ -20,7 +19,6 @@ case class ServerConfig(
     host: String = "0.0.0.0",
     port: Int = 8000,
     captureDir: String = "/tmp/remote-camera-mcp",
-    micSource: String = "camera", // "camera" | "local"
 )
 
 object Config:
@@ -31,12 +29,10 @@ object Config:
       username = env("TAPO_USERNAME"),
       password = env("TAPO_PASSWORD"),
       onvifPort = envOpt("TAPO_ONVIF_PORT").flatMap(s => Try(s.toInt).toOption).getOrElse(2020),
-      streamUrl = envOpt("TAPO_STREAM_URL"),
       mountMode = envOpt("TAPO_MOUNT_MODE").getOrElse("normal"),
     )
     val server = ServerConfig(
       captureDir = envOpt("CAPTURE_DIR").getOrElse("/tmp/remote-camera-mcp"),
-      micSource = envOpt("MIC_SOURCE").getOrElse("camera"),
     )
     (camera, server)
 

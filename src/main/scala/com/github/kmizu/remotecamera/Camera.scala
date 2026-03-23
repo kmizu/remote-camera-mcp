@@ -18,7 +18,7 @@ import java.util.Base64
 case class Position(pan: Double = 0.0, tilt: Double = 0.0)
 
 // ===========================================================================
-// Camera — wraps ONVIF + ffmpeg for capture / PTZ / audio
+// Camera — wraps ONVIF for capture / PTZ
 // ===========================================================================
 
 class Camera(
@@ -44,7 +44,6 @@ class Camera(
       case "look_up"             => move("up", args.hcursor.get[Int]("degrees").getOrElse(20))
       case "look_down"           => move("down", args.hcursor.get[Int]("degrees").getOrElse(20))
       case "look_around"         => lookAround
-      case "listen"              => listen(args)
       case "camera_info"         => cameraInfo
       case "camera_presets"      => presets
       case "camera_go_to_preset" => gotoPreset(args.hcursor.get[String]("preset_id").getOrElse(""))
@@ -64,7 +63,6 @@ class Camera(
     val file = captureDir.resolve(s"capture_$now.jpg")
     IO(Files.createDirectories(captureDir)) >>
       captureViaOnvif(file)
-        .handleErrorWith(_ => captureViaFfmpeg(file))
         .flatMap(_ => encodeImage(file))
 
   private def captureViaOnvif(out: Path): IO[Unit] =
@@ -74,15 +72,6 @@ class Camera(
       bytes   <- onvif.downloadSnapshot(uri)
       _       <- IO(Files.write(out, bytes))
     yield ()
-
-  private def captureViaFfmpeg(out: Path): IO[Unit] =
-    val url = rtspUrl
-    ffmpeg(List(
-      "-y", "-rtsp_transport", "tcp",
-      "-i", url,
-      "-frames:v", "1", "-f", "image2",
-      out.toString,
-    ))
 
   private def encodeImage(path: Path): IO[(String, Int, Int, Path)] = IO:
     val bytes = Files.readAllBytes(path)
@@ -157,50 +146,6 @@ class Camera(
         )
       CallToolResult(content :+ TextContent(s"Captured ${images.size} angles. Returned to center."))
 
-  // -- Audio ----------------------------------------------------------------
-
-  private def listen(args: Json): IO[CallToolResult] =
-    val duration   = args.hcursor.get[Int]("duration").getOrElse(5).min(30).max(1)
-    val transcribe = args.hcursor.get[Boolean]("transcribe").getOrElse(true)
-    val now        = LocalDateTime.now().format(ts)
-    val wavFile    = captureDir.resolve(s"audio_$now.wav")
-
-    val input = if serverConfig.micSource == "local" then
-      List("-f", "pulse", "-i", "default")
-    else
-      List("-rtsp_transport", "tcp", "-i", rtspUrl)
-
-    for
-      _ <- IO(Files.createDirectories(captureDir))
-      _ <- ffmpeg(
-             List("-y") ++ input ++
-               List("-t", duration.toString, "-vn", "-acodec", "pcm_s16le", wavFile.toString)
-           )
-      transcript <- if transcribe then whisperTranscribe(wavFile) else IO.pure(Option.empty[String])
-    yield
-      val text = new StringBuilder
-      text ++= s"Recorded ${duration}s of audio\nFile: $wavFile\n"
-      transcript.foreach(t => text ++= s"\n--- Transcript ---\n$t")
-      CallToolResult(List(TextContent(text.toString)))
-
-  private def whisperTranscribe(audioPath: Path): IO[Option[String]] =
-    IO.blocking:
-      import scala.sys.process.*
-      val outDir = audioPath.getParent.toString
-      val exitCode = List(
-        "whisper", audioPath.toString,
-        "--model", "base",
-        "--output_format", "txt",
-        "--output_dir", outDir,
-      ).!(ProcessLogger(_ => (), _ => ()))
-
-      if exitCode == 0 then
-        val txtFile = Path.of(outDir, audioPath.getFileName.toString.replaceAll("\\.[^.]+$", ".txt"))
-        if Files.exists(txtFile) then Some(Files.readString(txtFile).trim)
-        else None
-      else None
-    .handleError(_ => None)
-
   // -- Info -----------------------------------------------------------------
 
   private def cameraInfo: IO[CallToolResult] =
@@ -221,17 +166,6 @@ class Camera(
         CallToolResult(List(TextContent(s"Moved to preset $id")))
       )
 
-  // -- Helpers --------------------------------------------------------------
-
-  private def rtspUrl: String =
-    config.streamUrl.getOrElse(
-      s"rtsp://${config.username}:${config.password}@${config.host}:554/stream1"
-    )
-
-  private def ffmpeg(args: List[String]): IO[Unit] = IO.blocking:
-    import scala.sys.process.*
-    val exitCode = ("ffmpeg" :: args).!(ProcessLogger(_ => (), _ => ()))
-    if exitCode != 0 then throw RuntimeException(s"ffmpeg exited with code $exitCode")
 
 object Camera:
   /** Create a connected camera. */

@@ -1,8 +1,8 @@
 # Remote Camera MCP Server
 
-TP-Link Tapo等のWi-Fiカメラを MCP (Streamable HTTP) 経由で制御して、AIに「目・首・耳」を与えるサーバー。
+TP-Link Tapo等のWi-Fiカメラを MCP (Streamable HTTP) 経由で制御して、AIに「目・首」を与えるサーバー。
 
-Scala 3 製。JVM でも Scala Native でも動く。
+Scala 3 製。外部コマンド依存なし（JDK のみで動作）。
 
 ## 対応カメラ
 
@@ -20,7 +20,6 @@ Scala 3 製。JVM でも Scala Native でも動く。
 | `look_up` | 上を向く |
 | `look_down` | 下を向く |
 | `look_around` | 部屋を見渡す（4方向撮影） |
-| `listen` | マイクで周囲の音を聞く（Whisper文字起こし対応） |
 | `camera_info` | カメラ情報取得 |
 | `camera_presets` | プリセット位置一覧 |
 | `camera_go_to_preset` | プリセット位置に移動 |
@@ -70,31 +69,13 @@ TAPO_PASSWORD=your-password        # カメラアカウントのパスワード
 
 #### 必要なもの
 
-- **JDK 11+**（JVM実行時）
+- **JDK 21+**
 - **sbt**（ビルドツール）
-- **ffmpeg**（画像キャプチャ・音声録音）
-- **whisper CLI**（音声文字起こし、オプション）
-
-#### JVM で実行
 
 ```bash
-sbt appJVM/run                         # サーバー起動（http://0.0.0.0:8000/mcp）
-sbt "appJVM/run -- --port 3001"        # ポート指定
-```
-
-#### Scala Native でビルド・実行
-
-```bash
-# 追加で必要: clang, libunwind-dev
-sbt appNative/nativeLink               # ネイティブバイナリ生成
-./appNative/target/scala-3.3.4/remote-camera-mcp  # 直接実行
-```
-
-#### コンパイルのみ
-
-```bash
-sbt appJVM/compile
-sbt appNative/compile
+sbt run                           # サーバー起動（http://0.0.0.0:8000/mcp）
+sbt "run --port 3001"             # ポート指定
+sbt compile                       # コンパイルのみ
 ```
 
 ## MCP クライアントから接続する
@@ -139,25 +120,17 @@ Streamable HTTP トランスポートのみ対応。エンドポイントは `ht
 | `TAPO_USERNAME` | Yes | - | カメラアカウントのユーザー名 |
 | `TAPO_PASSWORD` | Yes | - | カメラアカウントのパスワード |
 | `TAPO_ONVIF_PORT` | No | `2020` | ONVIFポート |
-| `TAPO_MOUNT_MODE` | No | `normal` | `normal` or `ceiling`（天吊り時は映像180°回転＋パン反転） |
-| `TAPO_STREAM_URL` | No | 自動検出 | RTSPストリームURL |
+| `TAPO_MOUNT_MODE` | No | `normal` | `normal` or `ceiling`（天吊り時はパン反転） |
 | `CAPTURE_DIR` | No | `/tmp/remote-camera-mcp` | 画像保存ディレクトリ |
-| `MIC_SOURCE` | No | `camera` | マイク音源 `camera`（RTSP）or `local`（PC内蔵マイク） |
 
 ## 技術スタック
 
 | ライブラリ | 用途 |
 |-----------|------|
-| **http4s-ember** | HTTP サーバー & クライアント（JVM/Native両対応） |
+| **http4s-ember** | HTTP サーバー & クライアント |
 | **circe** | JSON（MCP JSON-RPC プロトコル） |
 | **scala-xml** | ONVIF SOAP 通信 |
 | **cats-effect** | 非同期 IO |
-
-## 外部依存
-
-- **ffmpeg** — RTSP経由のキャプチャ・音声録音に使用。システムにインストールが必要
-- **JDK 11+**（JVM実行時）
-- **clang + libunwind-dev**（Scala Native ビルド時）
 
 ## トラブルシューティング
 

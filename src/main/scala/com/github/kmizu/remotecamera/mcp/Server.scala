@@ -112,19 +112,6 @@ class McpServer(camera: Camera):
     Tool("look_around",
       "Look around the room (captures center, left, right, up).",
       emptySchema),
-    Tool("listen",
-      "Listen with your ears (microphone). Returns transcribed text.",
-      Json.obj(
-        "type" -> "object".asJson,
-        "properties" -> Json.obj(
-          "duration" -> Json.obj(
-            "type" -> "number".asJson, "default" -> 5.asJson, "minimum" -> 1.asJson, "maximum" -> 30.asJson,
-          ),
-          "transcribe" -> Json.obj(
-            "type" -> "boolean".asJson, "default" -> Json.True,
-          ),
-        ),
-      )),
     Tool("camera_info",
       "Get camera device information.",
       emptySchema),
