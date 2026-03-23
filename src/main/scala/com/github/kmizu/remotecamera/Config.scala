@@ -25,11 +25,11 @@ object Config:
   /** Load configuration from env vars, falling back to `.env` file. */
   def load(): (CameraConfig, ServerConfig) =
     val camera = CameraConfig(
-      host = env("TAPO_CAMERA_HOST"),
-      username = env("TAPO_USERNAME"),
-      password = env("TAPO_PASSWORD"),
-      onvifPort = envOpt("TAPO_ONVIF_PORT").flatMap(s => Try(s.toInt).toOption).getOrElse(2020),
-      mountMode = envOpt("TAPO_MOUNT_MODE").getOrElse("normal"),
+      host = env("CAMERA_HOST"),
+      username = env("CAMERA_USERNAME"),
+      password = env("CAMERA_PASSWORD"),
+      onvifPort = envOpt("CAMERA_ONVIF_PORT").flatMap(s => Try(s.toInt).toOption).getOrElse(2020),
+      mountMode = envOpt("CAMERA_MOUNT_MODE").getOrElse("normal"),
     )
     val server = ServerConfig(
       captureDir = envOpt("CAPTURE_DIR").getOrElse("/tmp/remote-camera-mcp"),

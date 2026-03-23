@@ -31,7 +31,7 @@ Main.scala          ── IOApp entry point, CLI args, wiring
 - cats-effect `IO` throughout — all effects are pure
 - `Ref[IO, _]` for mutable state (camera position, ONVIF session)
 - Capture via ONVIF `GetSnapshotUri` (HTTP download, no ffmpeg)
-- Ceiling mount mode (`TAPO_MOUNT_MODE=ceiling`): inverts pan direction
+- Ceiling mount mode (`CAMERA_MOUNT_MODE=ceiling`): inverts pan direction
 - ONVIF service discovery via `GetCapabilities` on connect
 
 **Stack:**
@@ -42,7 +42,7 @@ Main.scala          ── IOApp entry point, CLI args, wiring
 
 ## Environment Variables
 
-See `.env.example` for full list. Required: `TAPO_CAMERA_HOST`, `TAPO_USERNAME`, `TAPO_PASSWORD`.
+See `.env.example` for full list. Required: `CAMERA_HOST`, `CAMERA_USERNAME`, `CAMERA_PASSWORD`.
 
 ## External Dependencies
 
