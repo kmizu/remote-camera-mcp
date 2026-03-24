@@ -37,11 +37,18 @@ class OnvifClient(httpClient: Client[IO], config: CameraConfig):
   def connect: IO[OnvifSession] =
     for
       caps     <- getCapabilities
+      _        <- IO.println(s"Capabilities: $caps")
       mediaUrl  = caps.getOrElse("media", deviceUrl)
       ptzUrl    = caps.getOrElse("ptz", deviceUrl)
+      _        <- IO.println(s"Media URL: $mediaUrl, PTZ URL: $ptzUrl")
       token    <- getProfileToken(mediaUrl)
-      snap     <- getSnapshotUri(mediaUrl, token).handleError(_ => None)
-    yield OnvifSession(mediaUrl, ptzUrl, token, snap)
+      _        <- IO.println(s"Profile token: $token")
+      snap     <- getSnapshotUri(mediaUrl, token).handleErrorWith: e =>
+                    IO.println(s"GetSnapshotUri failed: ${e.getMessage}, trying fallback") >>
+                    IO.pure(None)
+      resolved  = snap.orElse(Some(fallbackSnapshotUrl))
+      _        <- IO.println(s"Snapshot URI: ${resolved.getOrElse("none")}")
+    yield OnvifSession(mediaUrl, ptzUrl, token, resolved)
 
   /** Get device information (manufacturer, model, firmware, etc.). */
   def getDeviceInfo: IO[Map[String, String]] =
@@ -127,6 +134,10 @@ class OnvifClient(httpClient: Client[IO], config: CameraConfig):
       </s:Envelope>
     """<?xml version="1.0" encoding="utf-8"?>""" + envelope.toString
 
+  /** Common snapshot URL for Tapo cameras when ONVIF GetSnapshotUri fails. */
+  private val fallbackSnapshotUrl =
+    s"http://${config.host}:${config.onvifPort}/onvif/snapshot"
+
   // -- Discovery helpers ----------------------------------------------------
 
   private def getCapabilities: IO[Map[String, String]] =
@@ -156,8 +167,10 @@ class OnvifClient(httpClient: Client[IO], config: CameraConfig):
       <GetSnapshotUri xmlns="http://www.onvif.org/ver10/media/wsdl">
         <ProfileToken>{token}</ProfileToken>
       </GetSnapshotUri>
-    soapCall(mediaUrl, body).map: resp =>
-      (resp \\ "Uri").headOption.map(_.text.trim)
+    IO.println(s"Calling GetSnapshotUri at $mediaUrl with token=$token") >>
+    soapCall(mediaUrl, body).flatMap: resp =>
+      IO.println(s"GetSnapshotUri response: ${resp.toString.take(500)}") >>
+      IO.pure((resp \\ "Uri").headOption.map(_.text.trim))
 
 // ===========================================================================
 // WS-Security UsernameToken (Password Digest)

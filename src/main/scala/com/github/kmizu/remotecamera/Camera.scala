@@ -10,6 +10,8 @@ import java.nio.file.{Files, Path}
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 import java.util.Base64
+import javax.imageio.ImageIO
+import org.bytedeco.javacv.{FFmpegFrameGrabber, Java2DFrameConverter}
 
 // ===========================================================================
 // Camera position tracking
@@ -63,6 +65,9 @@ class Camera(
     val file = captureDir.resolve(s"capture_$now.jpg")
     IO(Files.createDirectories(captureDir)) >>
       captureViaOnvif(file)
+        .handleErrorWith: e =>
+          IO.println(s"ONVIF snapshot failed (${e.getMessage}), falling back to RTSP capture") >>
+          captureViaRtsp(file)
         .flatMap(_ => encodeImage(file))
 
   private def captureViaOnvif(out: Path): IO[Unit] =
@@ -70,26 +75,31 @@ class Camera(
       session <- sessionRef.get
       uri     <- IO.fromOption(session.snapshotUri)(RuntimeException("No snapshot URI"))
       bytes   <- onvif.downloadSnapshot(uri)
+      _       <- IO.raiseWhen(bytes.length < 100)(RuntimeException("Snapshot too small, likely not an image"))
       _       <- IO(Files.write(out, bytes))
     yield ()
+
+  private def captureViaRtsp(out: Path): IO[Unit] =
+    val url = s"rtsp://${config.username}:${config.password}@${config.host}:554/stream1"
+    IO.blocking:
+      val grabber = FFmpegFrameGrabber(url)
+      grabber.setOption("rtsp_transport", "tcp")
+      try
+        grabber.start()
+        val frame = grabber.grabImage()
+        if frame == null then throw RuntimeException("Failed to grab frame from RTSP")
+        val converter = Java2DFrameConverter()
+        val image = converter.convert(frame)
+        ImageIO.write(image, "jpg", out.toFile)
+      finally
+        grabber.stop()
+        grabber.release()
 
   private def encodeImage(path: Path): IO[(String, Int, Int, Path)] = IO:
     val bytes = Files.readAllBytes(path)
     val b64   = Base64.getEncoder.encodeToString(bytes)
-    // Quick JPEG dimension read (SOF0 marker)
-    val (w, h) = jpegDimensions(bytes)
-    (b64, w, h, path)
-
-  private def jpegDimensions(data: Array[Byte]): (Int, Int) =
-    // Scan for SOF0 (0xFF 0xC0) marker
-    var i = 0
-    while i < data.length - 9 do
-      if data(i) == 0xFF.toByte && (data(i + 1) == 0xC0.toByte || data(i + 1) == 0xC2.toByte) then
-        val h = ((data(i + 5) & 0xFF) << 8) | (data(i + 6) & 0xFF)
-        val w = ((data(i + 7) & 0xFF) << 8) | (data(i + 8) & 0xFF)
-        return (w, h)
-      i += 1
-    (0, 0)
+    val image = ImageIO.read(path.toFile)
+    (b64, image.getWidth, image.getHeight, path)
 
   // -- PTZ ------------------------------------------------------------------
 

@@ -17,6 +17,7 @@ lazy val app = (project in file("."))
       "io.circe"               %% "circe-generic"       % CirceVersion,
       "io.circe"               %% "circe-parser"        % CirceVersion,
       "org.scala-lang.modules" %% "scala-xml"           % "2.3.0",
+      "org.bytedeco"           %  "javacv-platform"     % "1.5.11",
     ),
   )
 
