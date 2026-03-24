@@ -80,20 +80,30 @@ class Camera(
     yield ()
 
   private def captureViaRtsp(out: Path): IO[Unit] =
-    val url = s"rtsp://${config.username}:${config.password}@${config.host}:554/stream1"
-    IO.blocking:
-      val grabber = FFmpegFrameGrabber(url)
-      grabber.setOption("rtsp_transport", "tcp")
-      try
-        grabber.start()
-        val frame = grabber.grabImage()
-        if frame == null then throw RuntimeException("Failed to grab frame from RTSP")
-        val converter = Java2DFrameConverter()
-        val image = converter.convert(frame)
-        ImageIO.write(image, "jpg", out.toFile)
-      finally
-        grabber.stop()
-        grabber.release()
+    for
+      session <- sessionRef.get
+      uri     <- IO.fromOption(session.streamUri)(RuntimeException("No RTSP stream URI from ONVIF"))
+      // Inject credentials into RTSP URL: rtsp://host:554/... → rtsp://user:pass@host:554/...
+      url      = injectCredentials(uri)
+      _       <- IO.blocking:
+                   val grabber = FFmpegFrameGrabber(url)
+                   grabber.setOption("rtsp_transport", "tcp")
+                   try
+                     grabber.start()
+                     val frame = grabber.grabImage()
+                     if frame == null then throw RuntimeException("Failed to grab frame from RTSP")
+                     val converter = Java2DFrameConverter()
+                     val image = converter.convert(frame)
+                     ImageIO.write(image, "jpg", out.toFile)
+                   finally
+                     grabber.stop()
+                     grabber.release()
+    yield ()
+
+  /** Inject username:password into an RTSP URL for authentication. */
+  private def injectCredentials(uri: String): String =
+    val cred = s"${config.username}:${config.password}@"
+    uri.replaceFirst("rtsp://", s"rtsp://$cred")
 
   private def encodeImage(path: Path): IO[(String, Int, Int, Path)] = IO:
     val bytes = Files.readAllBytes(path)

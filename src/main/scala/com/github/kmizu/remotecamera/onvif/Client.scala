@@ -20,6 +20,7 @@ case class OnvifSession(
     ptzUrl: String,
     profileToken: String,
     snapshotUri: Option[String],
+    streamUri: Option[String],
 )
 
 // ===========================================================================
@@ -33,7 +34,7 @@ class OnvifClient(httpClient: Client[IO], config: CameraConfig):
 
   // -- Public API -----------------------------------------------------------
 
-  /** Connect: discover services, profile, snapshot URI. */
+  /** Connect: discover services, profile, snapshot/stream URIs. */
   def connect: IO[OnvifSession] =
     for
       caps     <- getCapabilities
@@ -44,11 +45,14 @@ class OnvifClient(httpClient: Client[IO], config: CameraConfig):
       token    <- getProfileToken(mediaUrl)
       _        <- IO.println(s"Profile token: $token")
       snap     <- getSnapshotUri(mediaUrl, token).handleErrorWith: e =>
-                    IO.println(s"GetSnapshotUri failed: ${e.getMessage}, trying fallback") >>
+                    IO.println(s"GetSnapshotUri not supported: ${e.getMessage}") >>
                     IO.pure(None)
-      resolved  = snap.orElse(Some(fallbackSnapshotUrl))
-      _        <- IO.println(s"Snapshot URI: ${resolved.getOrElse("none")}")
-    yield OnvifSession(mediaUrl, ptzUrl, token, resolved)
+      stream   <- getStreamUri(mediaUrl, token).handleErrorWith: e =>
+                    IO.println(s"GetStreamUri failed: ${e.getMessage}") >>
+                    IO.pure(None)
+      _        <- IO.println(s"Snapshot URI: ${snap.getOrElse("none")}")
+      _        <- IO.println(s"Stream URI: ${stream.getOrElse("none")}")
+    yield OnvifSession(mediaUrl, ptzUrl, token, snap, stream)
 
   /** Get device information (manufacturer, model, firmware, etc.). */
   def getDeviceInfo: IO[Map[String, String]] =
@@ -134,10 +138,6 @@ class OnvifClient(httpClient: Client[IO], config: CameraConfig):
       </s:Envelope>
     """<?xml version="1.0" encoding="utf-8"?>""" + envelope.toString
 
-  /** Common snapshot URL for Tapo cameras when ONVIF GetSnapshotUri fails. */
-  private val fallbackSnapshotUrl =
-    s"http://${config.host}:${config.onvifPort}/onvif/snapshot"
-
   // -- Discovery helpers ----------------------------------------------------
 
   private def getCapabilities: IO[Map[String, String]] =
@@ -167,10 +167,22 @@ class OnvifClient(httpClient: Client[IO], config: CameraConfig):
       <GetSnapshotUri xmlns="http://www.onvif.org/ver10/media/wsdl">
         <ProfileToken>{token}</ProfileToken>
       </GetSnapshotUri>
-    IO.println(s"Calling GetSnapshotUri at $mediaUrl with token=$token") >>
-    soapCall(mediaUrl, body).flatMap: resp =>
-      IO.println(s"GetSnapshotUri response: ${resp.toString.take(500)}") >>
-      IO.pure((resp \\ "Uri").headOption.map(_.text.trim))
+    soapCall(mediaUrl, body).map: resp =>
+      (resp \\ "Uri").headOption.map(_.text.trim)
+
+  private def getStreamUri(mediaUrl: String, token: String): IO[Option[String]] =
+    val body =
+      <GetStreamUri xmlns="http://www.onvif.org/ver10/media/wsdl">
+        <StreamSetup>
+          <Stream xmlns="http://www.onvif.org/ver10/schema">RTP-Unicast</Stream>
+          <Transport xmlns="http://www.onvif.org/ver10/schema">
+            <Protocol>RTSP</Protocol>
+          </Transport>
+        </StreamSetup>
+        <ProfileToken>{token}</ProfileToken>
+      </GetStreamUri>
+    soapCall(mediaUrl, body).map: resp =>
+      (resp \\ "Uri").headOption.map(_.text.trim)
 
 // ===========================================================================
 // WS-Security UsernameToken (Password Digest)
